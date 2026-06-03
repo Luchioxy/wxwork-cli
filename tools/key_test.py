@@ -10,7 +10,7 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from wecom_cli.data.crypto import verify_key
+from wxwork_cli.data.crypto import verify_key
 
 
 def main():

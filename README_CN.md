@@ -1,6 +1,6 @@
-# wecom-cli
+# wxwork-cli
 
-企业微信 (WeCom/WXWork) 命令行数据查询工具，面向 LLM Agent 和开发者。
+企业微信 (WeCom/WXWork) 本地数据查询 CLI 工具，面向 LLM Agent 和开发者。
 
 > AI 优先设计：所有命令默认输出 JSON。使用 `--format text` 获取人类可读输出。
 
@@ -22,22 +22,22 @@ pip install -e .
 
 ```bash
 # 1. 初始化（需要企业微信正在运行）
-wecom-cli init
+wxwork-cli init
 
 # 2. 查看最近会话
-wecom-cli sessions --limit 10
+wxwork-cli sessions --limit 10
 
 # 3. 读取聊天记录
-wecom-cli history "张三" --limit 50 --format text
+wxwork-cli history "张三" --limit 50 --format text
 
 # 4. 搜索消息
-wecom-cli search "项目进度" --chat "技术群"
+wxwork-cli search "项目进度" --chat "技术群"
 
 # 5. 查看通讯录
-wecom-cli contacts --query "张"
+wxwork-cli contacts --query "张"
 
 # 6. 部门树
-wecom-cli departments --tree --format text
+wxwork-cli departments --tree --format text
 ```
 
 ## 命令列表
@@ -81,33 +81,33 @@ wecom-cli departments --tree --format text
 
 ```bash
 # JSON 输出（默认）— 管道到 jq 或喂给 LLM
-wecom-cli sessions --limit 5 | jq '.[] | {name, unread_count}'
+wxwork-cli sessions --limit 5 | jq '.[] | {name, unread_count}'
 
 # 搜索并提取
-wecom-cli search "deadline" --format json | jq '.[] | .content'
+wxwork-cli search "deadline" --format json | jq '.[] | .content'
 ```
 
 ## 配置
 
-配置文件：`~/.wecom-cli/config.json`
+配置文件：`~/.wxwork-cli/config.json`
 
 ```json
 {
   "db_dir": "C:\\Users\\<user>\\Documents\\WXWork\\<corp_id>",
-  "keys_file": "~/.wecom-cli/all_keys.json",
+  "keys_file": "~/.wxwork-cli/all_keys.json",
   "corp_id": "ww1234567890"
 }
 ```
 
 ## 环境变量
 
-- `WECOM_CLI_CONFIG` — 配置文件路径
+- `WXWORK_CLI_CONFIG` — 配置文件路径
 
 ## 文档
 
-- [技术文档](docs/TECHNICAL_GUIDE.md) - 完整技术文档和使用指南
-- [快速入门](docs/QUICKSTART_CN.md) - 5 分钟上手指南
-- [README (English)](README.md) - 英文文档
+- [技术文档](docs/TECHNICAL_GUIDE.md) — 完整技术文档和使用指南
+- [快速入门](docs/QUICKSTART_CN.md) — 5 分钟上手指南
+- [README (English)](README.md) — 英文文档
 
 ## 许可证
 

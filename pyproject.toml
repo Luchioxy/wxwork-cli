@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "wecom-cli"
+name = "wxwork-cli"
 version = "0.1.0"
-description = "WeCom enterprise data query CLI for LLMs and developers"
+description = "WeCom/WXWork local data query CLI for LLMs and developers"
 readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.10"
@@ -16,7 +16,7 @@ dependencies = [
 ]
 
 [project.scripts]
-wecom-cli = "wecom_cli.main:cli"
+wxwork-cli = "wxwork_cli.main:cli"
 
 [tool.setuptools.packages.find]
-include = ["wecom_cli*"]
+include = ["wxwork_cli*"]

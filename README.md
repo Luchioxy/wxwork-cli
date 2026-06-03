@@ -1,6 +1,6 @@
-# wecom-cli
+# wxwork-cli
 
-Enterprise WeChat (WeCom/WXWork) data query CLI for LLMs and developers.
+Enterprise WeChat (WeCom/WXWork) local data query CLI for LLMs and developers.
 
 > AI-first design: all commands output JSON by default. Use `--format text` for human-readable output.
 
@@ -22,22 +22,22 @@ pip install -e .
 
 ```bash
 # 1. Initialize (requires WeCom to be running)
-wecom-cli init
+wxwork-cli init
 
 # 2. List recent sessions
-wecom-cli sessions --limit 10
+wxwork-cli sessions --limit 10
 
 # 3. Read chat history
-wecom-cli history "张三" --limit 50 --format text
+wxwork-cli history "张三" --limit 50 --format text
 
 # 4. Search messages
-wecom-cli search "项目进度" --chat "技术群"
+wxwork-cli search "项目进度" --chat "技术群"
 
 # 5. View contacts
-wecom-cli contacts --query "张"
+wxwork-cli contacts --query "张"
 
 # 6. Department tree
-wecom-cli departments --tree --format text
+wxwork-cli departments --tree --format text
 ```
 
 ## Commands
@@ -81,27 +81,27 @@ wecom-cli departments --tree --format text
 
 ```bash
 # JSON output (default) - pipe to jq or feed to LLM
-wecom-cli sessions --limit 5 | jq '.[] | {name, unread_count}'
+wxwork-cli sessions --limit 5 | jq '.[] | {name, unread_count}'
 
 # Search and extract
-wecom-cli search "deadline" --format json | jq '.[] | .content'
+wxwork-cli search "deadline" --format json | jq '.[] | .content'
 ```
 
 ## Configuration
 
-Config file: `~/.wecom-cli/config.json`
+Config file: `~/.wxwork-cli/config.json`
 
 ```json
 {
   "db_dir": "C:\\Users\\<user>\\Documents\\WXWork\\<corp_id>",
-  "keys_file": "~/.wecom-cli/all_keys.json",
+  "keys_file": "~/.wxwork-cli/all_keys.json",
   "corp_id": "ww1234567890"
 }
 ```
 
 ## Environment Variables
 
-- `WECOM_CLI_CONFIG` - Path to config file
+- `WXWORK_CLI_CONFIG` - Path to config file
 
 ## Documentation
 

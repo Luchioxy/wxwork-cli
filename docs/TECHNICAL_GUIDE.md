@@ -1,4 +1,4 @@
-# wecom-cli 技术文档与使用指南
+# wxwork-cli 技术文档与使用指南
 
 > 企业微信 (WeCom/WXWork) 命令行数据查询工具
 > 面向 LLM Agent 和开发者的 AI-first 设计
@@ -21,9 +21,9 @@
 
 ## 1. 项目概述
 
-### 1.1 什么是 wecom-cli
+### 1.1 什么是 wxwork-cli
 
-wecom-cli 是一个命令行工具，用于直接从本地企业微信客户端读取和查询数据。它通过解密企业微信的 SQLCipher 加密数据库，提供结构化的数据访问接口。
+wxwork-cli 是一个命令行工具，用于直接从本地企业微信客户端读取和查询数据。它通过解密企业微信的 SQLCipher 加密数据库，提供结构化的数据访问接口。
 
 ### 1.2 核心特性
 
@@ -63,14 +63,14 @@ wecom-cli 是一个命令行工具，用于直接从本地企业微信客户端�
 ### 2.2 目录结构
 
 ```
-wecom-cli/
+wxwork-cli/
 ├── pyproject.toml              # 项目配置和依赖
 ├── README.md                   # 英文文档
 ├── README_CN.md                # 中文文档
 ├── docs/
 │   └── TECHNICAL_GUIDE.md      # 本文档
 │
-├── wecom_cli/
+├── wxwork_cli/
 │   ├── __init__.py             # 版本信息
 │   ├── main.py                 # Click 入口点 + 命令注册
 │   │
@@ -159,7 +159,7 @@ wecom-cli/
 
 ```bash
 # 1. 克隆或下载项目
-cd wecom-cli
+cd wxwork-cli
 
 # 2. 创建虚拟环境（推荐）
 python -m venv .venv
@@ -170,7 +170,7 @@ python -m venv .venv
 pip install -e .
 
 # 4. 验证安装
-wecom-cli --version
+wxwork-cli --version
 ```
 
 ### 3.3 依赖说明
@@ -183,12 +183,12 @@ wecom-cli --version
 
 ### 3.4 配置文件
 
-配置文件位置：`~/.wecom-cli/config.json`
+配置文件位置：`~/.wxwork-cli/config.json`
 
 ```json
 {
   "db_dir": "C:\\Users\\<username>\\Documents\\WXWork\\<corp_id>",
-  "keys_file": "C:\\Users\\<username>\\.wecom-cli\\all_keys.json",
+  "keys_file": "C:\\Users\\<username>\\.wxwork-cli\\all_keys.json",
   "corp_id": "ww1234567890",
   "wxwork_process": "WXWork.exe"
 }
@@ -198,7 +198,7 @@ wecom-cli --version
 
 | 变量 | 说明 |
 |------|------|
-| `WECOM_CLI_CONFIG` | 自定义配置文件路径 |
+| `WXWORK_CLI_CONFIG` | 自定义配置文件路径 |
 
 ---
 
@@ -210,36 +210,36 @@ wecom-cli --version
 # 步骤 1: 确保企业微信正在运行并已登录
 
 # 步骤 2: 初始化（提取加密密钥）
-wecom-cli init
+wxwork-cli init
 
 # 步骤 3: 查看最近会话
-wecom-cli sessions --limit 10
+wxwork-cli sessions --limit 10
 ```
 
 ### 4.2 基本操作流程
 
 ```bash
 # 查看会话列表
-wecom-cli sessions --format text
+wxwork-cli sessions --format text
 
 # 读取聊天记录
-wecom-cli history "张三" --limit 50 --format text
+wxwork-cli history "张三" --limit 50 --format text
 
 # 搜索消息
-wecom-cli search "项目进度" --chat "技术群"
+wxwork-cli search "项目进度" --chat "技术群"
 
 # 查看通讯录
-wecom-cli contacts --query "张"
+wxwork-cli contacts --query "张"
 
 # 查看部门结构
-wecom-cli departments --tree --format text
+wxwork-cli departments --tree --format text
 ```
 
 ### 4.3 输出格式
 
 **JSON 输出（默认）**：
 ```bash
-wecom-cli sessions --limit 5
+wxwork-cli sessions --limit 5
 ```
 ```json
 [
@@ -255,7 +255,7 @@ wecom-cli sessions --limit 5
 
 **Text 输出**：
 ```bash
-wecom-cli sessions --limit 5 --format text
+wxwork-cli sessions --limit 5 --format text
 ```
 ```
 Recent sessions (5):
@@ -273,12 +273,12 @@ Recent sessions (5):
 
 ### 5.1 初始化命令
 
-#### `wecom-cli init`
+#### `wxwork-cli init`
 
 从运行中的企业微信进程提取加密密钥。
 
 ```bash
-wecom-cli init [--db-dir PATH] [--force] [--corp-id ID]
+wxwork-cli init [--db-dir PATH] [--force] [--corp-id ID]
 ```
 
 | 参数 | 说明 |
@@ -290,45 +290,45 @@ wecom-cli init [--db-dir PATH] [--force] [--corp-id ID]
 **示例**：
 ```bash
 # 自动检测
-wecom-cli init
+wxwork-cli init
 
 # 手动指定目录
-wecom-cli init --db-dir "C:\Users\me\Documents\WXWork\ww123456"
+wxwork-cli init --db-dir "C:\Users\me\Documents\WXWork\ww123456"
 
 # 强制重新提取
-wecom-cli init --force
+wxwork-cli init --force
 ```
 
 ### 5.2 会话命令
 
-#### `wecom-cli sessions`
+#### `wxwork-cli sessions`
 
 列出最近的聊天会话。
 
 ```bash
-wecom-cli sessions [--limit N] [--format json|text]
+wxwork-cli sessions [--limit N] [--format json|text]
 ```
 
 **示例**：
 ```bash
 # 查看最近 20 个会话
-wecom-cli sessions
+wxwork-cli sessions
 
 # 只看 5 个，文本格式
-wecom-cli sessions --limit 5 --format text
+wxwork-cli sessions --limit 5 --format text
 
 # JSON 输出，用 jq 处理
-wecom-cli sessions | jq '.[] | {name: .nickname, unread: .unread_count}'
+wxwork-cli sessions | jq '.[] | {name: .nickname, unread: .unread_count}'
 ```
 
 ### 5.3 历史记录命令
 
-#### `wecom-cli history`
+#### `wxwork-cli history`
 
 获取指定聊天的消息历史。
 
 ```bash
-wecom-cli history <chat_name> [OPTIONS]
+wxwork-cli history <chat_name> [OPTIONS]
 ```
 
 | 参数 | 说明 |
@@ -348,26 +348,26 @@ wecom-cli history <chat_name> [OPTIONS]
 **示例**：
 ```bash
 # 基本用法
-wecom-cli history "张三" --limit 100
+wxwork-cli history "张三" --limit 100
 
 # 时间范围过滤
-wecom-cli history "技术群" --start-time "2024-06-01" --end-time "2024-06-03"
+wxwork-cli history "技术群" --start-time "2024-06-01" --end-time "2024-06-03"
 
 # 只看图片消息
-wecom-cli history "张三" --type image
+wxwork-cli history "张三" --type image
 
 # 文本格式输出
-wecom-cli history "张三" --limit 20 --format text
+wxwork-cli history "张三" --limit 20 --format text
 ```
 
 ### 5.4 搜索命令
 
-#### `wecom-cli search`
+#### `wxwork-cli search`
 
 在消息中搜索关键词。
 
 ```bash
-wecom-cli search <keyword> [OPTIONS]
+wxwork-cli search <keyword> [OPTIONS]
 ```
 
 | 参数 | 说明 |
@@ -380,23 +380,23 @@ wecom-cli search <keyword> [OPTIONS]
 **示例**：
 ```bash
 # 全局搜索
-wecom-cli search "项目进度"
+wxwork-cli search "项目进度"
 
 # 在特定群聊中搜索
-wecom-cli search "deadline" --chat "技术群" --chat "产品群"
+wxwork-cli search "deadline" --chat "技术群" --chat "产品群"
 
 # 搜索文件类型消息
-wecom-cli search "报告" --type file
+wxwork-cli search "报告" --type file
 ```
 
 ### 5.5 通讯录命令
 
-#### `wecom-cli contacts`
+#### `wxwork-cli contacts`
 
 查询和搜索联系人。
 
 ```bash
-wecom-cli contacts [OPTIONS]
+wxwork-cli contacts [OPTIONS]
 ```
 
 | 参数 | 说明 |
@@ -410,26 +410,26 @@ wecom-cli contacts [OPTIONS]
 **示例**：
 ```bash
 # 列出所有联系人
-wecom-cli contacts --limit 100
+wxwork-cli contacts --limit 100
 
 # 搜索联系人
-wecom-cli contacts --query "张"
+wxwork-cli contacts --query "张"
 
 # 查看详情
-wecom-cli contacts --detail "zhangsan"
+wxwork-cli contacts --detail "zhangsan"
 
 # 按部门过滤
-wecom-cli contacts --department 1001
+wxwork-cli contacts --department 1001
 ```
 
 ### 5.6 部门命令
 
-#### `wecom-cli departments`
+#### `wxwork-cli departments`
 
 查看部门层级结构。
 
 ```bash
-wecom-cli departments [OPTIONS]
+wxwork-cli departments [OPTIONS]
 ```
 
 | 参数 | 说明 |
@@ -440,60 +440,60 @@ wecom-cli departments [OPTIONS]
 **示例**：
 ```bash
 # 查看所有部门
-wecom-cli departments
+wxwork-cli departments
 
 # 树形结构
-wecom-cli departments --tree --format text
+wxwork-cli departments --tree --format text
 
 # 查看子部门
-wecom-cli departments --parent 1001
+wxwork-cli departments --parent 1001
 ```
 
 ### 5.7 群聊命令
 
-#### `wecom-cli members`
+#### `wxwork-cli members`
 
 查看群成员或部门成员。
 
 ```bash
-wecom-cli members <group_name> [--department ID] [--format json|text]
+wxwork-cli members <group_name> [--department ID] [--format json|text]
 ```
 
 **示例**：
 ```bash
 # 查看群成员
-wecom-cli members "技术群"
+wxwork-cli members "技术群"
 
 # 查看部门成员
-wecom-cli members --department 1001
+wxwork-cli members --department 1001
 ```
 
-#### `wecom-cli groups`
+#### `wxwork-cli groups`
 
 列出群聊。
 
 ```bash
-wecom-cli groups [--query KEYWORD] [--limit N]
+wxwork-cli groups [--query KEYWORD] [--limit N]
 ```
 
 ### 5.8 标签命令
 
-#### `wecom-cli tags`
+#### `wxwork-cli tags`
 
 管理联系人标签。
 
 ```bash
-wecom-cli tags [--list] [--members TAG_NAME]
+wxwork-cli tags [--list] [--members TAG_NAME]
 ```
 
 ### 5.9 统计命令
 
-#### `wecom-cli stats`
+#### `wxwork-cli stats`
 
 查看聊天统计数据。
 
 ```bash
-wecom-cli stats <chat_name> [--start-time TIME] [--end-time TIME]
+wxwork-cli stats <chat_name> [--start-time TIME] [--end-time TIME]
 ```
 
 **输出内容**：
@@ -504,107 +504,107 @@ wecom-cli stats <chat_name> [--start-time TIME] [--end-time TIME]
 
 ### 5.10 导出命令
 
-#### `wecom-cli export`
+#### `wxwork-cli export`
 
 导出聊天记录到文件。
 
 ```bash
-wecom-cli export <chat_name> [--format markdown|txt|json] [--output PATH]
+wxwork-cli export <chat_name> [--format markdown|txt|json] [--output PATH]
 ```
 
 **示例**：
 ```bash
 # 导出为 Markdown
-wecom-cli export "技术群" --format markdown --output chat.md
+wxwork-cli export "技术群" --format markdown --output chat.md
 
 # 导出为 JSON
-wecom-cli export "张三" --format json --output chat.json
+wxwork-cli export "张三" --format json --output chat.json
 ```
 
 ### 5.11 收藏命令
 
-#### `wecom-cli favorites`
+#### `wxwork-cli favorites`
 
 查看收藏的内容。
 
 ```bash
-wecom-cli favorites [--type text|image|file|link|card] [--query KEYWORD]
+wxwork-cli favorites [--type text|image|file|link|card] [--query KEYWORD]
 ```
 
 ### 5.12 未读命令
 
-#### `wecom-cli unread`
+#### `wxwork-cli unread`
 
 显示有未读消息的会话。
 
 ```bash
-wecom-cli unread [--limit N]
+wxwork-cli unread [--limit N]
 ```
 
 ### 5.13 新消息命令
 
-#### `wecom-cli new-messages`
+#### `wxwork-cli new-messages`
 
 增量获取新消息（有状态）。
 
 ```bash
-wecom-cli new-messages
+wxwork-cli new-messages
 ```
 
-**说明**：每次调用只返回自上次检查以来的新消息，状态保存在 `~/.wecom-cli/last_check.json`。
+**说明**：每次调用只返回自上次检查以来的新消息，状态保存在 `~/.wxwork-cli/last_check.json`。
 
 ### 5.14 企业功能命令
 
-#### `wecom-cli apps`
+#### `wxwork-cli apps`
 列出已安装的企业应用。
 
-#### `wecom-cli approval`
+#### `wxwork-cli approval`
 查询审批流程。
 ```bash
-wecom-cli approval [--status pending|approved|rejected|all]
+wxwork-cli approval [--status pending|approved|rejected|all]
 ```
 
-#### `wecom-cli schedule`
+#### `wxwork-cli schedule`
 查询日程安排。
 ```bash
-wecom-cli schedule [--date YYYY-MM-DD] [--range DAYS]
+wxwork-cli schedule [--date YYYY-MM-DD] [--range DAYS]
 ```
 
-#### `wecom-cli checkin`
+#### `wxwork-cli checkin`
 查询打卡记录。
 ```bash
-wecom-cli checkin [--date YYYY-MM-DD] [--user NAME]
+wxwork-cli checkin [--date YYYY-MM-DD] [--user NAME]
 ```
 
-#### `wecom-cli reports`
+#### `wxwork-cli reports`
 查询日报/周报。
 ```bash
-wecom-cli reports [--type daily|weekly] [--date YYYY-MM-DD] [--user NAME]
+wxwork-cli reports [--type daily|weekly] [--date YYYY-MM-DD] [--user NAME]
 ```
 
 ### 5.15 Schema 命令
 
-#### `wecom-cli schema`
+#### `wxwork-cli schema`
 
 检查数据库结构（开发工具）。
 
 ```bash
-wecom-cli schema [--db NAME] [--table TABLE] [--sample]
+wxwork-cli schema [--db NAME] [--table TABLE] [--sample]
 ```
 
 **示例**：
 ```bash
 # 列出所有数据库
-wecom-cli schema
+wxwork-cli schema
 
 # 查看特定数据库的表
-wecom-cli schema --db msg
+wxwork-cli schema --db msg
 
 # 查看表结构
-wecom-cli schema --db contact --table contact
+wxwork-cli schema --db contact --table contact
 
 # 包含示例数据
-wecom-cli schema --db contact --table contact --sample
+wxwork-cli schema --db contact --table contact --sample
 ```
 
 ---
@@ -613,7 +613,7 @@ wecom-cli schema --db contact --table contact --sample
 
 ### 6.1 设计理念
 
-wecom-cli 采用 **AI-first** 设计：
+wxwork-cli 采用 **AI-first** 设计：
 - JSON 默认输出，无需额外参数
 - 结构化数据，易于解析
 - 错误信息也是 JSON 格式
@@ -621,17 +621,17 @@ wecom-cli 采用 **AI-first** 设计：
 
 ### 6.2 Claude Code 集成
 
-在 Claude Code 中直接调用 wecom-cli：
+在 Claude Code 中直接调用 wxwork-cli：
 
 ```bash
 # 查看最近会话
-wecom-cli sessions --limit 10
+wxwork-cli sessions --limit 10
 
 # 搜索消息
-wecom-cli search "项目进度" --format json
+wxwork-cli search "项目进度" --format json
 
 # 获取聊天记录
-wecom-cli history "技术群" --limit 50 --start-time "2024-06-01"
+wxwork-cli history "技术群" --limit 50 --start-time "2024-06-01"
 ```
 
 ### 6.3 JSON 输出结构
@@ -661,16 +661,16 @@ wecom-cli history "技术群" --limit 50 --start-time "2024-06-01"
 
 ```bash
 # 用 jq 提取特定字段
-wecom-cli sessions | jq '.[] | {name: .nickname, unread: .unread_count}'
+wxwork-cli sessions | jq '.[] | {name: .nickname, unread: .unread_count}'
 
 # 统计未读消息总数
-wecom-cli sessions | jq '[.[].unread_count] | add'
+wxwork-cli sessions | jq '[.[].unread_count] | add'
 
 # 搜索并提取内容
-wecom-cli search "deadline" | jq '.[] | .content'
+wxwork-cli search "deadline" | jq '.[] | .content'
 
 # 导出特定时间段的消息
-wecom-cli history "技术群" --start-time "2024-06-01" --end-time "2024-06-03" | jq '.[].content'
+wxwork-cli history "技术群" --start-time "2024-06-01" --end-time "2024-06-03" | jq '.[].content'
 ```
 
 ### 6.5 Agent 调用模式
@@ -680,8 +680,8 @@ import subprocess
 import json
 
 def query_wecom(command, args=None):
-    """调用 wecom-cli 命令"""
-    cmd = ["wecom-cli", command]
+    """调用 wxwork-cli 命令"""
+    cmd = ["wxwork-cli", command]
     if args:
         cmd.extend(args)
 
@@ -716,7 +716,7 @@ search_results = query_wecom("search", ["项目进度"])
 4. 验证 HMAC
 5. 解密页内容
 
-**代码位置**：`wecom_cli/data/crypto.py`
+**代码位置**：`wxwork_cli/data/crypto.py`
 
 ### 7.2 密钥提取
 
@@ -728,12 +728,12 @@ search_results = query_wecom("search", ["项目进度"])
 3. 正则搜索 96 字节十六进制模式（32 字节密钥 + 16 字节盐值）
 4. 验证密钥：尝试解密数据库首页，检查 SQLite 头
 
-**代码位置**：`wecom_cli/keys/scanner_windows.py`
+**代码位置**：`wxwork_cli/keys/scanner_windows.py`
 
 ### 7.3 缓存机制
 
 **缓存策略**：
-- 缓存目录：系统临时目录 `wecom_cli_cache/`
+- 缓存目录：系统临时目录 `wxwork_cli_cache/`
 - 缓存键：数据库路径的 SHA-256 哈希
 - 失效机制：基于文件修改时间（mtime）
 - 持久化：`_mtimes.json` 记录缓存元数据
@@ -746,7 +746,7 @@ search_results = query_wecom("search", ["项目进度"])
                       否 → 解密数据库 → 更新缓存 → 返回路径
 ```
 
-**代码位置**：`wecom_cli/data/db_cache.py`
+**代码位置**：`wxwork_cli/data/db_cache.py`
 
 ### 7.4 消息表发现
 
@@ -760,7 +760,7 @@ search_results = query_wecom("search", ["项目进度"])
 3. 计算目标用户名的 MD5 哈希
 4. 匹配对应的表
 
-**代码位置**：`wecom_cli/core/messages.py`
+**代码位置**：`wxwork_cli/core/messages.py`
 
 ### 7.5 内容解压
 
@@ -777,7 +777,7 @@ if compress_type == 4:  # zstd
     content = dctx.decompress(raw_content)
 ```
 
-**代码位置**：`wecom_cli/core/messages.py`
+**代码位置**：`wxwork_cli/core/messages.py`
 
 ---
 
@@ -808,16 +808,16 @@ if compress_type == 4:  # zstd
 **原因**：数据库路径检测失败或密钥不匹配。
 
 **解决**：
-1. 使用 `wecom-cli schema` 检查数据库结构
-2. 使用 `wecom-cli init --force` 重新提取密钥
-3. 手动指定数据库目录：`wecom-cli init --db-dir <path>`
+1. 使用 `wxwork-cli schema` 检查数据库结构
+2. 使用 `wxwork-cli init --force` 重新提取密钥
+3. 手动指定数据库目录：`wxwork-cli init --db-dir <path>`
 
 #### Q: 解密失败："HMAC verification failed"
 
 **原因**：密钥不正确或数据库已损坏。
 
 **解决**：
-1. 重新初始化：`wecom-cli init --force`
+1. 重新初始化：`wxwork-cli init --force`
 2. 检查企业微信是否更新了加密方式
 
 ### 8.2 调试技巧
@@ -826,26 +826,26 @@ if compress_type == 4:  # zstd
 
 ```bash
 # 使用 --verbose 标志（如果支持）
-wecom-cli sessions --verbose
+wxwork-cli sessions --verbose
 
 # 检查配置文件
-cat ~/.wecom-cli/config.json
+cat ~/.wxwork-cli/config.json
 
 # 检查密钥文件
-cat ~/.wecom-cli/all_keys.json
+cat ~/.wxwork-cli/all_keys.json
 ```
 
 #### 使用 Schema 工具
 
 ```bash
 # 列出所有数据库
-wecom-cli schema
+wxwork-cli schema
 
 # 检查特定数据库
-wecom-cli schema --db msg
+wxwork-cli schema --db msg
 
 # 查看表结构和示例数据
-wecom-cli schema --db contact --table contact --sample
+wxwork-cli schema --db contact --table contact --sample
 ```
 
 #### 手动验证密钥
@@ -863,7 +863,7 @@ python tools/key_test.py <db_path> <hex_key>
 ```bash
 # 克隆项目
 git clone <repo-url>
-cd wecom-cli
+cd wxwork-cli
 
 # 创建虚拟环境
 python -m venv .venv
@@ -879,13 +879,13 @@ pytest
 
 ### 9.2 添加新命令
 
-1. **创建命令文件**：`wecom_cli/commands/my_command.py`
+1. **创建命令文件**：`wxwork_cli/commands/my_command.py`
 
 ```python
 """My custom command."""
 
 import click
-from wecom_cli.output.formatter import output
+from wxwork_cli.output.formatter import output
 
 @click.command("my-command")
 @click.option("--param", default=None, help="Parameter description")
@@ -902,10 +902,10 @@ def my_command(ctx, param, fmt):
     output(results, fmt)
 ```
 
-2. **注册命令**：在 `wecom_cli/main.py` 中添加
+2. **注册命令**：在 `wxwork_cli/main.py` 中添加
 
 ```python
-from wecom_cli.commands.my_command import my_command
+from wxwork_cli.commands.my_command import my_command
 
 cli.add_command(my_command)
 ```
@@ -927,7 +927,7 @@ pytest
 pytest tests/test_crypto.py
 
 # 生成覆盖率报告
-pytest --cov=wecom_cli
+pytest --cov=wxwork_cli
 ```
 
 ---
@@ -938,26 +938,26 @@ pytest --cov=wecom_cli
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `init` | 初始化 | `wecom-cli init` |
-| `sessions` | 会话列表 | `wecom-cli sessions --limit 10` |
-| `history` | 聊天记录 | `wecom-cli history "张三" --limit 50` |
-| `search` | 搜索消息 | `wecom-cli search "关键词"` |
-| `contacts` | 通讯录 | `wecom-cli contacts --query "张"` |
-| `departments` | 部门树 | `wecom-cli departments --tree` |
-| `members` | 成员列表 | `wecom-cli members "技术群"` |
-| `groups` | 群聊列表 | `wecom-cli groups` |
-| `tags` | 标签 | `wecom-cli tags --list` |
-| `stats` | 统计 | `wecom-cli stats "技术群"` |
-| `export` | 导出 | `wecom-cli export "张三" --format markdown` |
-| `favorites` | 收藏 | `wecom-cli favorites` |
-| `unread` | 未读 | `wecom-cli unread` |
-| `new-messages` | 新消息 | `wecom-cli new-messages` |
-| `apps` | 应用 | `wecom-cli apps` |
-| `approval` | 审批 | `wecom-cli approval --status pending` |
-| `schedule` | 日程 | `wecom-cli schedule --date 2024-06-03` |
-| `checkin` | 打卡 | `wecom-cli checkin --date 2024-06-03` |
-| `reports` | 日报 | `wecom-cli reports --type daily` |
-| `schema` | Schema | `wecom-cli schema --db msg` |
+| `init` | 初始化 | `wxwork-cli init` |
+| `sessions` | 会话列表 | `wxwork-cli sessions --limit 10` |
+| `history` | 聊天记录 | `wxwork-cli history "张三" --limit 50` |
+| `search` | 搜索消息 | `wxwork-cli search "关键词"` |
+| `contacts` | 通讯录 | `wxwork-cli contacts --query "张"` |
+| `departments` | 部门树 | `wxwork-cli departments --tree` |
+| `members` | 成员列表 | `wxwork-cli members "技术群"` |
+| `groups` | 群聊列表 | `wxwork-cli groups` |
+| `tags` | 标签 | `wxwork-cli tags --list` |
+| `stats` | 统计 | `wxwork-cli stats "技术群"` |
+| `export` | 导出 | `wxwork-cli export "张三" --format markdown` |
+| `favorites` | 收藏 | `wxwork-cli favorites` |
+| `unread` | 未读 | `wxwork-cli unread` |
+| `new-messages` | 新消息 | `wxwork-cli new-messages` |
+| `apps` | 应用 | `wxwork-cli apps` |
+| `approval` | 审批 | `wxwork-cli approval --status pending` |
+| `schedule` | 日程 | `wxwork-cli schedule --date 2024-06-03` |
+| `checkin` | 打卡 | `wxwork-cli checkin --date 2024-06-03` |
+| `reports` | 日报 | `wxwork-cli reports --type daily` |
+| `schema` | Schema | `wxwork-cli schema --db msg` |
 
 ### B. 消息类型对照表
 
@@ -993,14 +993,14 @@ pytest --cov=wecom_cli
 
 | 文件 | 位置 |
 |------|------|
-| 配置文件 | `~/.wecom-cli/config.json` |
-| 密钥文件 | `~/.wecom-cli/all_keys.json` |
-| 状态文件 | `~/.wecom-cli/last_check.json` |
-| 缓存目录 | `<tempdir>/wecom_cli_cache/` |
+| 配置文件 | `~/.wxwork-cli/config.json` |
+| 密钥文件 | `~/.wxwork-cli/all_keys.json` |
+| 状态文件 | `~/.wxwork-cli/last_check.json` |
+| 缓存目录 | `<tempdir>/wxwork_cli_cache/` |
 | 日志 | 标准错误输出 |
 
 ---
 
 **文档版本**：1.0.0
 **最后更新**：2024-06-03
-**维护者**：wecom-cli 团队
+**维护者**：wxwork-cli 团队
