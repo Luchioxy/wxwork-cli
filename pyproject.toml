@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wecom-cli"
+version = "0.1.0"
+description = "WeCom enterprise data query CLI for LLMs and developers"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1,<9",
+    "pycryptodome>=3.19,<4",
+    "zstandard>=0.22,<1",
+]
+
+[project.scripts]
+wecom-cli = "wecom_cli.main:cli"
+
+[tool.setuptools.packages.find]
+include = ["wecom_cli*"]
