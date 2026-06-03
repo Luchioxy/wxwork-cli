@@ -9,23 +9,6 @@ import sqlite3
 from typing import Any
 
 
-def _find_dept_db(db_dir: str) -> str | None:
-    """Find the department database file.
-
-    Args:
-        db_dir: WXWork data directory.
-
-    Returns:
-        Path to the department database, or None if not found.
-    """
-    for root, dirs, files in os.walk(db_dir):
-        for f in files:
-            if f.endswith(".db") or f.endswith(".sqlite"):
-                if "dept" in f.lower() or "department" in f.lower() or "org" in f.lower():
-                    return os.path.join(root, f)
-    return None
-
-
 def get_department_tree(cache, db_dir: str) -> list[dict]:
     """Get the full department hierarchy.
 
@@ -36,30 +19,50 @@ def get_department_tree(cache, db_dir: str) -> list[dict]:
     Returns:
         List of department dicts with hierarchical structure.
     """
-    dept_db_path = _find_dept_db(db_dir)
-    if not dept_db_path:
-        return []
+    results = []
 
-    decrypted_path = cache.get(dept_db_path)
-    if not decrypted_path:
-        return []
+    # Find user database (departments are stored in user.db)
+    user_dbs = []
+    for root, dirs, files in os.walk(db_dir):
+        for f in files:
+            if f == "user.db":
+                user_dbs.append(os.path.join(root, f))
 
-    conn = sqlite3.connect(f"file:{decrypted_path}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        # Try common table names
-        for table_name in ["department", "Department", "dept", "departments"]:
-            try:
-                cursor = conn.execute(f"SELECT * FROM [{table_name}] LIMIT 1")
-                cursor.fetchone()
-                cursor = conn.execute(f"SELECT * FROM [{table_name}]")
-                return [dict(row) for row in cursor.fetchall()]
-            except sqlite3.OperationalError:
-                continue
+    for db_path in user_dbs:
+        decrypted = cache.get(db_path)
+        if not decrypted:
+            continue
 
-        return []
-    finally:
-        conn.close()
+        conn = sqlite3.connect(f"file:{decrypted}?mode=ro", uri=True)
+        conn.text_factory = bytes
+        try:
+            # Try department_tableV2 first
+            for table_name in ["department_tableV2", "department", "Department", "dept"]:
+                try:
+                    cursor = conn.execute(f"SELECT * FROM [{table_name}] LIMIT 1")
+                    cursor.fetchone()
+
+                    cursor = conn.execute(f"SELECT * FROM [{table_name}]")
+                    columns = [desc[0] if isinstance(desc[0], str) else desc[0].decode() for desc in cursor.description]
+
+                    for row in cursor.fetchall():
+                        dept = {}
+                        for i, col in enumerate(columns):
+                            val = row[i]
+                            if isinstance(val, bytes):
+                                try:
+                                    val = val.decode('utf-8')
+                                except:
+                                    val = val.hex()
+                            dept[col] = val
+                        results.append(dept)
+                    return results
+                except sqlite3.OperationalError:
+                    continue
+
+            return []
+        finally:
+            conn.close()
 
 
 def get_department_info(dept_id: str, cache, db_dir: str) -> dict | None:

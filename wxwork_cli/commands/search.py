@@ -2,7 +2,7 @@
 
 import click
 
-from wxwork_cli.core.messages import search_messages
+from wxwork_cli.core.messages import search_messages, get_user_names
 from wxwork_cli.core.contacts import resolve_username
 from wxwork_cli.output.formatter import output, format_message_text
 
@@ -27,14 +27,26 @@ def search(ctx, keyword, chat, start_time, end_time, limit, msg_type, fmt):
     """
     app = ctx.obj["app"]
 
+    # Load user names for sender resolution
+    user_names = get_user_names(app.cache, app.db_dir)
+
     results = []
     chats_to_search = []
 
     if chat:
-        # Resolve chat names
+        # Resolve chat names to user IDs
         for chat_name in chat:
-            username = resolve_username(chat_name, app.cache, app.db_dir)
-            chats_to_search.append(username or chat_name)
+            # Try to find user ID by name
+            found = False
+            for uid, name in user_names.items():
+                if name == chat_name or chat_name in name:
+                    chats_to_search.append(str(uid))
+                    found = True
+                    break
+            if not found:
+                # Fall back to resolve_username
+                username = resolve_username(chat_name, app.cache, app.db_dir)
+                chats_to_search.append(username or chat_name)
     else:
         chats_to_search = [None]  # Search all
 
@@ -46,11 +58,12 @@ def search(ctx, keyword, chat, start_time, end_time, limit, msg_type, fmt):
             chat_username=chat_username,
             limit=limit,
             msg_type=msg_type,
+            user_names=user_names,
         )
         results.extend(found)
 
     # Sort by time and limit
-    results.sort(key=lambda m: m.get("create_time", 0), reverse=True)
+    results.sort(key=lambda m: m.get("send_time", m.get("create_time", 0)), reverse=True)
     results = results[:limit]
 
     if fmt == "text":

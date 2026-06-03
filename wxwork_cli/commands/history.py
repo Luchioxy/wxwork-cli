@@ -2,7 +2,7 @@
 
 import click
 
-from wxwork_cli.core.messages import collect_chat_history
+from wxwork_cli.core.messages import collect_chat_history, get_user_names
 from wxwork_cli.core.contacts import resolve_username
 from wxwork_cli.output.formatter import output, format_message_text
 
@@ -28,21 +28,40 @@ def history(ctx, chat_name, limit, offset, start_time, end_time, msg_type, media
     """
     app = ctx.obj["app"]
 
-    # Resolve chat name to username
-    username = resolve_username(chat_name, app.cache, app.db_dir)
-    if not username:
-        username = chat_name  # Use as-is if not resolved
+    # Try to resolve chat name to user ID(s)
+    user_names = get_user_names(app.cache, app.db_dir)
+    user_ids = []
 
-    messages = collect_chat_history(
-        cache=app.cache,
-        db_dir=app.db_dir,
-        chat_username=username,
-        limit=limit,
-        offset=offset,
-        start_time=start_time,
-        end_time=end_time,
-        msg_type=msg_type,
-    )
+    # Search by name - collect all matching IDs
+    for uid, name in user_names.items():
+        if name == chat_name or chat_name in name:
+            user_ids.append(uid)
+
+    # If not found by name, try to resolve as username
+    if not user_ids:
+        username = resolve_username(chat_name, app.cache, app.db_dir)
+        if username:
+            user_ids.append(username)
+
+    # Use chat_name as-is if not resolved
+    if not user_ids:
+        user_ids.append(chat_name)
+
+    # Try each user_id until we find messages
+    messages = []
+    for user_id in user_ids:
+        messages = collect_chat_history(
+            cache=app.cache,
+            db_dir=app.db_dir,
+            chat_username=str(user_id),
+            limit=limit,
+            offset=offset,
+            start_time=start_time,
+            end_time=end_time,
+            msg_type=msg_type,
+        )
+        if messages:
+            break
 
     if fmt == "text":
         if not messages:

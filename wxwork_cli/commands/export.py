@@ -5,7 +5,7 @@ import sys
 
 import click
 
-from wxwork_cli.core.messages import collect_chat_history
+from wxwork_cli.core.messages import collect_chat_history, get_user_names
 from wxwork_cli.core.contacts import resolve_username
 from wxwork_cli.output.formatter import output_json, output_text, format_message_text
 
@@ -26,18 +26,35 @@ def export(ctx, chat_name, export_format, output_path, start_time, end_time, lim
     """
     app = ctx.obj["app"]
 
-    username = resolve_username(chat_name, app.cache, app.db_dir)
-    if not username:
-        username = chat_name
+    # Load user names for sender resolution
+    user_names = get_user_names(app.cache, app.db_dir)
 
-    messages = collect_chat_history(
-        cache=app.cache,
-        db_dir=app.db_dir,
-        chat_username=username,
-        limit=limit,
-        start_time=start_time,
-        end_time=end_time,
-    )
+    # Try to find user ID(s) by name
+    user_ids = []
+    for uid, name in user_names.items():
+        if name == chat_name or chat_name in name:
+            user_ids.append(uid)
+
+    if not user_ids:
+        username = resolve_username(chat_name, app.cache, app.db_dir)
+        if username:
+            user_ids.append(username)
+        else:
+            user_ids.append(chat_name)
+
+    # Try each user_id until we find messages
+    messages = []
+    for user_id in user_ids:
+        messages = collect_chat_history(
+            cache=app.cache,
+            db_dir=app.db_dir,
+            chat_username=str(user_id),
+            limit=limit,
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if messages:
+            break
 
     if not messages:
         click.echo("No messages to export.", err=True)

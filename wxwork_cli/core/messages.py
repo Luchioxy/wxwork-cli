@@ -165,12 +165,13 @@ def parse_wxwork_message(content: bytes) -> str:
         return content.hex()
 
 
-def _parse_message_row(row: tuple, columns: list[str]) -> dict:
+def _parse_message_row(row: tuple, columns: list[str], user_names: dict = None) -> dict:
     """Parse a message row into a structured dict.
 
     Args:
         row: Raw row tuple from SQLite.
         columns: Column names.
+        user_names: Optional dict mapping user_id -> name for sender resolution.
 
     Returns:
         Structured message dict.
@@ -201,6 +202,13 @@ def _parse_message_row(row: tuple, columns: list[str]) -> dict:
     else:
         msg["content"] = str(content)
 
+    # Resolve sender name
+    sender_id = msg.get("sender_id")
+    if sender_id and user_names:
+        msg["sender_name"] = user_names.get(sender_id, str(sender_id))
+    else:
+        msg["sender_name"] = str(sender_id) if sender_id else "unknown"
+
     return msg
 
 
@@ -229,7 +237,6 @@ def get_user_names(cache, db_dir: str) -> dict[int, str]:
             continue
 
         conn = sqlite3.connect(f"file:{decrypted}?mode=ro", uri=True)
-        conn.text_factory = bytes
         try:
             cursor = conn.execute("SELECT id, name FROM user_table")
             for row in cursor.fetchall():
@@ -324,8 +331,8 @@ def collect_chat_history(
     Returns:
         List of message dicts.
     """
-    table_hash = _get_msg_table_hash(chat_username)
-    table_name = f"Msg_{table_hash}"
+    # Load user names for sender resolution
+    user_names = get_user_names(cache, db_dir)
 
     # Find message databases
     msg_db_files = find_msg_db_files(db_dir)
@@ -339,23 +346,40 @@ def collect_chat_history(
             continue
 
         conn = sqlite3.connect(f"file:{decrypted_path}?mode=ro", uri=True)
+        conn.text_factory = bytes
         try:
-            # Check if the table exists
+            # Try WXWork's message_table first
+            table_name = "message_table"
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
                 (table_name,)
             )
             if not cursor.fetchone():
-                continue
+                # Fall back to Msg_{hash} tables (personal WeChat format)
+                table_hash = _get_msg_table_hash(chat_username)
+                table_name = f"Msg_{table_hash}"
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table_name,)
+                )
+                if not cursor.fetchone():
+                    continue
 
             # Get column names
             cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns = [row[1] if isinstance(row[1], str) else row[1].decode() for row in cursor.fetchall()]
 
             # Build query
             query = f"SELECT * FROM [{table_name}]"
             conditions = []
             params = []
+
+            # For WXWork message_table, filter by conversation_id
+            if table_name == "message_table" and "conversation_id" in columns:
+                # Try to find conversation by user ID or name
+                # conversation_id format: S:user1_user2 or R:room_id
+                conditions.append("conversation_id LIKE ?")
+                params.append(f"%{chat_username}%")
 
             if start_time:
                 try:
@@ -366,7 +390,8 @@ def collect_chat_history(
                     except ValueError:
                         start_ts = None
                 if start_ts is not None:
-                    conditions.append("create_time >= ?")
+                    time_col = "send_time" if "send_time" in columns else "create_time"
+                    conditions.append(f"[{time_col}] >= ?")
                     params.append(start_ts)
 
             if end_time:
@@ -378,7 +403,8 @@ def collect_chat_history(
                     except ValueError:
                         end_ts = None
                 if end_ts is not None:
-                    conditions.append("create_time <= ?")
+                    time_col = "send_time" if "send_time" in columns else "create_time"
+                    conditions.append(f"[{time_col}] <= ?")
                     params.append(end_ts)
 
             if msg_type:
@@ -389,13 +415,15 @@ def collect_chat_history(
                         type_num = k
                         break
                 if type_num is not None:
-                    conditions.append("local_type = ?")
+                    type_col = "content_type" if "content_type" in columns else "local_type"
+                    conditions.append(f"[{type_col}] = ?")
                     params.append(type_num)
 
             if conditions:
                 query += " WHERE " + " AND ".join(conditions)
 
-            query += " ORDER BY create_time DESC"
+            time_col = "send_time" if "send_time" in columns else "create_time"
+            query += f" ORDER BY [{time_col}] DESC"
 
             # Always fetch limit + offset rows to handle offset at application level
             # This is necessary because messages come from multiple databases
@@ -405,7 +433,7 @@ def collect_chat_history(
             rows = cursor.fetchall()
 
             for row in rows:
-                msg = _parse_message_row(row, columns)
+                msg = _parse_message_row(row, columns, user_names)
                 messages.append(msg)
 
         except sqlite3.OperationalError:
@@ -429,6 +457,7 @@ def search_messages(
     chat_username: str | None = None,
     limit: int = 50,
     msg_type: str | None = None,
+    user_names: dict = None,
 ) -> list[dict]:
     """Search messages for a keyword.
 
@@ -439,10 +468,15 @@ def search_messages(
         chat_username: Optional - limit search to specific chat.
         limit: Maximum results to return.
         msg_type: Optional message type filter.
+        user_names: Optional dict mapping user_id -> name for sender resolution.
 
     Returns:
         List of matching message dicts.
     """
+    # Load user names if not provided
+    if user_names is None:
+        user_names = get_user_names(cache, db_dir)
+
     msg_db_files = find_msg_db_files(db_dir)
     if not msg_db_files:
         return []
@@ -456,39 +490,69 @@ def search_messages(
             continue
 
         conn = sqlite3.connect(f"file:{decrypted_path}?mode=ro", uri=True)
+        conn.text_factory = bytes
         try:
-            # Find all message tables
-            tables = find_msg_tables(decrypted_path)
+            # Try WXWork's message_table first
+            table_name = "message_table"
+            cursor = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (table_name,)
+            )
+            if not cursor.fetchone():
+                # Fall back to Msg_{hash} tables
+                tables = find_msg_tables(decrypted_path)
+            else:
+                tables = [table_name]
 
             for table_name in tables:
-                # If chat_username specified, check if this table is for that chat
-                if chat_username:
-                    expected_hash = _get_msg_table_hash(chat_username)
-                    if expected_hash not in table_name:
-                        continue
-
                 # Get column names
                 try:
                     cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
-                    columns = [row[1] for row in cursor.fetchall()]
+                    columns = [row[1] if isinstance(row[1], str) else row[1].decode() for row in cursor.fetchall()]
                 except sqlite3.OperationalError:
                     continue
 
-                # Search in message_content
-                content_col = "message_content"
-                if content_col not in columns:
-                    for col in columns:
-                        if "content" in col.lower():
-                            content_col = col
+                # Build query
+                query = f"SELECT * FROM [{table_name}]"
+                conditions = []
+                params = []
+
+                # Filter by chat if specified
+                if chat_username and "conversation_id" in columns:
+                    conditions.append("conversation_id LIKE ?")
+                    params.append(f"%{chat_username}%")
+
+                # Search in content column
+                content_col = "content" if "content" in columns else "message_content"
+                if content_col in columns:
+                    conditions.append(f"[{content_col}] LIKE ?")
+                    params.append(f"%{keyword}%")
+
+                # Filter by message type
+                if msg_type:
+                    type_num = None
+                    for k, v in MSG_TYPE_MAP.items():
+                        if v == msg_type:
+                            type_num = k
                             break
+                    if type_num is not None:
+                        type_col = "content_type" if "content_type" in columns else "local_type"
+                        conditions.append(f"[{type_col}] = ?")
+                        params.append(type_num)
+
+                if conditions:
+                    query += " WHERE " + " AND ".join(conditions)
+
+                time_col = "send_time" if "send_time" in columns else "create_time"
+                query += f" ORDER BY [{time_col}] DESC LIMIT ?"
+                params.append(limit)
 
                 try:
-                    query = f"SELECT * FROM [{table_name}] WHERE [{content_col}] LIKE ? LIMIT ?"
-                    cursor = conn.execute(query, (f"%{keyword}%", limit))
+                    cursor = conn.execute(query, params)
                     rows = cursor.fetchall()
 
                     for row in rows:
-                        msg = _parse_message_row(row, columns)
+                        msg = _parse_message_row(row, columns, user_names)
                         # Double-check case-insensitive match
                         if keyword_lower in str(msg.get("content", "")).lower():
                             results.append(msg)
@@ -499,7 +563,7 @@ def search_messages(
             conn.close()
 
     # Sort by time and limit
-    results.sort(key=lambda m: m.get("create_time", 0), reverse=True)
+    results.sort(key=lambda m: m.get("send_time", m.get("create_time", 0)), reverse=True)
     return results[:limit]
 
 
@@ -509,6 +573,7 @@ def collect_chat_stats(
     chat_username: str,
     start_time: str | None = None,
     end_time: str | None = None,
+    user_names: dict = None,
 ) -> dict:
     """Collect statistics for a chat.
 
@@ -518,12 +583,14 @@ def collect_chat_stats(
         chat_username: Username/ID of the chat.
         start_time: Optional start time filter.
         end_time: Optional end time filter.
+        user_names: Optional dict mapping user_id -> name for sender resolution.
 
     Returns:
         Dict with statistics (total_messages, type_breakdown, top_senders, hourly_activity).
     """
-    table_hash = _get_msg_table_hash(chat_username)
-    table_name = f"Msg_{table_hash}"
+    # Load user names if not provided
+    if user_names is None:
+        user_names = get_user_names(cache, db_dir)
 
     msg_db_files = find_msg_db_files(db_dir)
 
@@ -541,32 +608,50 @@ def collect_chat_stats(
             continue
 
         conn = sqlite3.connect(f"file:{decrypted_path}?mode=ro", uri=True)
+        conn.text_factory = bytes
         try:
+            # Try WXWork's message_table first
+            table_name = "message_table"
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
                 (table_name,)
             )
             if not cursor.fetchone():
-                continue
+                # Fall back to Msg_{hash} tables
+                table_hash = _get_msg_table_hash(chat_username)
+                table_name = f"Msg_{table_hash}"
+                cursor = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (table_name,)
+                )
+                if not cursor.fetchone():
+                    continue
 
             # Get column names
             cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
-            columns = [row[1] for row in cursor.fetchall()]
+            columns = [row[1] if isinstance(row[1], str) else row[1].decode() for row in cursor.fetchall()]
 
-            # Build time filter
+            # Build conditions
             conditions = []
             params = []
+
+            # Filter by conversation_id for WXWork message_table
+            if table_name == "message_table" and "conversation_id" in columns:
+                conditions.append("conversation_id LIKE ?")
+                params.append(f"%{chat_username}%")
+
+            time_col = "send_time" if "send_time" in columns else "create_time"
             if start_time:
                 try:
                     start_ts = int(datetime.strptime(start_time, "%Y-%m-%d").timestamp())
-                    conditions.append("create_time >= ?")
+                    conditions.append(f"[{time_col}] >= ?")
                     params.append(start_ts)
                 except ValueError:
                     pass
             if end_time:
                 try:
                     end_ts = int(datetime.strptime(end_time, "%Y-%m-%d").timestamp())
-                    conditions.append("create_time <= ?")
+                    conditions.append(f"[{time_col}] <= ?")
                     params.append(end_ts)
                 except ValueError:
                     pass
@@ -582,7 +667,7 @@ def collect_chat_stats(
             stats["total_messages"] += cursor.fetchone()[0]
 
             # Type breakdown
-            type_col = "local_type" if "local_type" in columns else "type"
+            type_col = "content_type" if "content_type" in columns else ("local_type" if "local_type" in columns else "type")
             if type_col in columns:
                 cursor = conn.execute(
                     f"SELECT [{type_col}], COUNT(*) FROM [{table_name}]{where_clause} GROUP BY [{type_col}]",
@@ -593,19 +678,23 @@ def collect_chat_stats(
                     stats["type_breakdown"][type_name] = stats["type_breakdown"].get(type_name, 0) + row[1]
 
             # Top senders
-            sender_col = "real_sender_id" if "real_sender_id" in columns else "sender"
+            sender_col = "sender_id" if "sender_id" in columns else ("real_sender_id" if "real_sender_id" in columns else "sender")
             if sender_col in columns:
                 cursor = conn.execute(
                     f"SELECT [{sender_col}], COUNT(*) FROM [{table_name}]{where_clause} GROUP BY [{sender_col}] ORDER BY COUNT(*) DESC LIMIT 10",
                     params
                 )
                 for row in cursor.fetchall():
-                    stats["top_senders"][str(row[0])] = row[1]
+                    sender_id = row[0]
+                    count = row[1]
+                    # Resolve sender name
+                    sender_name = user_names.get(sender_id, str(sender_id))
+                    stats["top_senders"][sender_name] = stats["top_senders"].get(sender_name, 0) + count
 
             # Hourly activity
-            if "create_time" in columns:
+            if time_col in columns:
                 cursor = conn.execute(
-                    f"SELECT create_time FROM [{table_name}]{where_clause}", params
+                    f"SELECT [{time_col}] FROM [{table_name}]{where_clause}", params
                 )
                 for row in cursor.fetchall():
                     try:

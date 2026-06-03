@@ -2,7 +2,7 @@
 
 import click
 
-from wxwork_cli.core.messages import collect_chat_stats
+from wxwork_cli.core.messages import collect_chat_stats, get_user_names
 from wxwork_cli.core.contacts import resolve_username
 from wxwork_cli.output.formatter import output
 
@@ -21,17 +21,35 @@ def stats(ctx, chat_name, start_time, end_time, fmt):
     """
     app = ctx.obj["app"]
 
-    username = resolve_username(chat_name, app.cache, app.db_dir)
-    if not username:
-        username = chat_name
+    # Load user names for sender resolution
+    user_names = get_user_names(app.cache, app.db_dir)
 
-    result = collect_chat_stats(
-        cache=app.cache,
-        db_dir=app.db_dir,
-        chat_username=username,
-        start_time=start_time,
-        end_time=end_time,
-    )
+    # Try to find user ID(s) by name
+    user_ids = []
+    for uid, name in user_names.items():
+        if name == chat_name or chat_name in name:
+            user_ids.append(uid)
+
+    if not user_ids:
+        username = resolve_username(chat_name, app.cache, app.db_dir)
+        if username:
+            user_ids.append(username)
+        else:
+            user_ids.append(chat_name)
+
+    # Try each user_id until we find messages
+    result = None
+    for user_id in user_ids:
+        result = collect_chat_stats(
+            cache=app.cache,
+            db_dir=app.db_dir,
+            chat_username=str(user_id),
+            start_time=start_time,
+            end_time=end_time,
+            user_names=user_names,
+        )
+        if result["total_messages"] > 0:
+            break
 
     if fmt == "text":
         click.echo(f"Statistics for '{chat_name}':\n")

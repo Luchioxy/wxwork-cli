@@ -179,16 +179,17 @@ def format_contact_text(contact: dict) -> str:
     Returns:
         Formatted text string.
     """
-    name = contact.get("remark", contact.get("nickname", contact.get("username", "unknown")))
-    userid = contact.get("username", "")
-    dept = contact.get("department", "")
+    # Handle WXWork format
+    name = contact.get("name", contact.get("remark", contact.get("nickname", "unknown")))
+    english_name = contact.get("english_name", "")
+    userid = contact.get("id", contact.get("username", ""))
     position = contact.get("position", "")
 
     parts = [name]
+    if english_name:
+        parts.append(f" ({english_name})")
     if userid:
-        parts.append(f" ({userid})")
-    if dept:
-        parts.append(f" | {dept}")
+        parts.append(f" [{userid}]")
     if position:
         parts.append(f" | {position}")
 
