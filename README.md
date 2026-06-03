@@ -4,6 +4,15 @@ Enterprise WeChat (WeCom/WXWork) local data query CLI for LLMs and developers.
 
 > AI-first design: all commands output JSON by default. Use `--format text` for human-readable output.
 
+## ⚖️ 免责声明
+
+**使用本工具前请务必阅读 [DISCLAIMER.md](DISCLAIMER.md)**
+
+- 本工具仅供个人学习研究使用
+- 只读不写，数据不出本机
+- 请确保符合企业数据安全政策
+- 风险自担，责任自负
+
 ## Features
 
 - **Read local WXWork databases** - Decrypt and query WeCom's SQLCipher-encrypted SQLite databases
