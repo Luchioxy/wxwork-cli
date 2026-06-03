@@ -13,6 +13,7 @@ from Crypto.Cipher import AES
 # wxSQLite3 constants
 PAGE_SZ = 4096
 KEY_SZ = 16  # AES-128 uses 16-byte keys
+SALT_SZ = 16  # Salt size for key derivation
 SQLITE_HEADER = b"SQLite format 3\x00"
 WXSQLITE3_SALT = b"sAlT"
 

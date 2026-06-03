@@ -15,6 +15,10 @@ def output_json(data: Any) -> None:
     Args:
         data: Any JSON-serializable data.
     """
+    # Ensure proper encoding for Windows terminal
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     json.dump(data, sys.stdout, ensure_ascii=False, indent=2, default=str)
     sys.stdout.write("\n")
     sys.stdout.flush()

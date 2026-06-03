@@ -53,19 +53,31 @@ _HISTORY_QUERY_BATCH_SIZE = 500
 def find_msg_db_files(db_dir: str) -> list[str]:
     """Find message database files.
 
+    Prioritizes the main Data directory over Backup directories to ensure
+    the most recent messages are queried first.
+
     Args:
         db_dir: WXWork data directory.
 
     Returns:
-        List of paths to message database files.
+        List of paths to message database files, sorted by priority (main Data dir first).
     """
     msg_files = []
+    backup_files = []
+
     for root, dirs, files in os.walk(db_dir):
         for f in files:
             if f.endswith(".db") or f.endswith(".sqlite"):
                 if "msg" in f.lower() or "message" in f.lower():
-                    msg_files.append(os.path.join(root, f))
-    return sorted(msg_files)
+                    full_path = os.path.join(root, f)
+                    # Separate main Data files from Backup files
+                    if "backup" in root.lower():
+                        backup_files.append(full_path)
+                    else:
+                        msg_files.append(full_path)
+
+    # Main Data directory files first, then backup files
+    return sorted(msg_files) + sorted(backup_files)
 
 
 def find_msg_tables(decrypted_db_path: str) -> list[str]:

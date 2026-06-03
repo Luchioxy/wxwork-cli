@@ -698,23 +698,23 @@ search_results = query_wecom("search", ["项目进度"])
 
 ## 7. 技术实现细节
 
-### 7.1 SQLCipher 解密
+### 7.1 wxSQLite3 解密
 
-企业微信使用 SQLCipher 4 加密 SQLite 数据库：
+企业微信使用 wxSQLite3 AES-128-CBC 加密 SQLite 数据库：
 
 **加密参数**：
-- 算法：AES-256-CBC
+- 算法：AES-128-CBC
 - 页大小：4096 字节
-- 密钥长度：32 字节
-- 盐值长度：16 字节
-- HMAC：SHA-512
+- 密钥长度：16 字节
+- 盐值：固定值 `b"sAlT"`
+- IV 生成：基于页号的自定义 PRNG
 
 **解密流程**：
 1. 读取加密页（4096 字节）
-2. 提取盐值（页 1 前 16 字节）
-3. 派生 MAC 密钥：`PBKDF2-SHA512(key, mac_salt, 2)`
-4. 验证 HMAC
-5. 解密页内容
+2. 检查页 1 是否有 wxSQLite3 明文头部片段（字节 16-23）
+3. 派生页密钥：`MD5(raw_key + struct.pack("<I", page_no) + b"sAlT")`
+4. 生成 IV：使用 wxSQLite3 自定义 PRNG
+5. AES-128-CBC 解密页内容
 
 **代码位置**：`wxwork_cli/data/crypto.py`
 

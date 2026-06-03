@@ -62,11 +62,12 @@ def _get_wxwork_pids() -> list[tuple[int, int]]:
             if not line.strip() or "INFO:" in line:
                 continue
             # CSV format: "WXWork.exe","PID","Session#","Mem Usage"
+            # Example: "WXWork.exe","27364","Console","1","853,980 K"
             parts = line.strip().split(",")
-            if len(parts) >= 4:
+            if len(parts) >= 5:
                 try:
                     pid = int(parts[1].strip('"'))
-                    mem_str = parts[3].strip('"').replace(",", "").replace(" K", "").strip()
+                    mem_str = parts[4].strip('"').replace(",", "").replace(" K", "").strip()
                     mem_kb = int(mem_str)
                     pids.append((pid, mem_kb))
                 except (ValueError, IndexError):
