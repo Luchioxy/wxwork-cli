@@ -18,17 +18,20 @@ try:
 except ImportError:
     HAS_ZSTD = False
 
-# Message type constants (from WeChat/WXWork)
+# Message type constants (from WXWork)
 MSG_TYPE_MAP = {
-    1: "text",
-    3: "image",
-    34: "voice",
-    42: "card",
-    43: "video",
-    47: "sticker",
-    48: "location",
-    49: "link",
-    50: "call",
+    0: "text",
+    1: "image",
+    2: "voice",
+    3: "video",
+    4: "file",
+    5: "link",
+    6: "location",
+    7: "card",
+    8: "sticker",
+    9: "call",
+    10: "system",
+    14: "screenshot",  # 企业微信截图
     10000: "system",
     10002: "system",
     # WXWork-specific types
@@ -125,6 +128,43 @@ def _decompress_content(content: bytes, compress_type: int = 0) -> str:
     return str(content)
 
 
+def parse_wxwork_message(content: bytes) -> str:
+    """Parse WXWork message content from protobuf format.
+
+    Args:
+        content: Raw message content bytes.
+
+    Returns:
+        Parsed text content.
+    """
+    if not content or not isinstance(content, bytes):
+        return ''
+
+    try:
+        # Look for pattern: \x12<length>\n<length><text>
+        idx = content.find(b'\x12')
+        if idx > 0:
+            remaining = content[idx+1:]
+            if len(remaining) > 2:
+                length = remaining[0]
+                if length < len(remaining):
+                    text_bytes = remaining[2:2+length-1]
+                    text = text_bytes.decode('utf-8')
+                    # Remove control characters
+                    text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
+                    return text.strip()
+    except:
+        pass
+
+    # Fallback: try to decode as UTF-8
+    try:
+        text = content.decode('utf-8', errors='ignore')
+        text = ''.join(c for c in text if c.isprintable() or c in '\n\r\t')
+        return text.strip()
+    except:
+        return content.hex()
+
+
 def _parse_message_row(row: tuple, columns: list[str]) -> dict:
     """Parse a message row into a structured dict.
 
@@ -141,28 +181,122 @@ def _parse_message_row(row: tuple, columns: list[str]) -> dict:
             msg[col] = row[i]
 
     # Normalize fields
-    msg_type = msg.get("local_type", msg.get("type", 0))
+    msg_type = msg.get("content_type", msg.get("local_type", msg.get("type", 0)))
     msg["type"] = MSG_TYPE_MAP.get(msg_type, f"unknown_{msg_type}")
 
     # Parse timestamp
-    create_time = msg.get("create_time", 0)
-    if create_time:
+    send_time = msg.get("send_time", msg.get("create_time", 0))
+    if send_time:
         try:
-            msg["time"] = datetime.fromtimestamp(create_time).strftime("%Y-%m-%d %H:%M:%S")
+            msg["time"] = datetime.fromtimestamp(send_time).strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, OSError):
-            msg["time"] = str(create_time)
+            msg["time"] = str(send_time)
 
-    # Decompress content if needed
-    content = msg.get("message_content", msg.get("content", ""))
-    compress_type = msg.get("WCDB_CT_message_content", msg.get("compress_type", 0))
+    # Parse content
+    content = msg.get("content", "")
     if isinstance(content, bytes):
-        msg["content"] = _decompress_content(content, compress_type)
+        msg["content"] = parse_wxwork_message(content)
     elif content is None:
         msg["content"] = ""
     else:
         msg["content"] = str(content)
 
     return msg
+
+
+def get_user_names(cache, db_dir: str) -> dict[int, str]:
+    """Get mapping of user IDs to names.
+
+    Args:
+        cache: DBCache instance.
+        db_dir: WXWork data directory.
+
+    Returns:
+        Dict mapping user_id -> name.
+    """
+    user_names = {}
+
+    # Find user database
+    user_dbs = []
+    for root, dirs, files in os.walk(db_dir):
+        for f in files:
+            if f == "user.db":
+                user_dbs.append(os.path.join(root, f))
+
+    for db_path in user_dbs:
+        decrypted = cache.get(db_path)
+        if not decrypted:
+            continue
+
+        conn = sqlite3.connect(f"file:{decrypted}?mode=ro", uri=True)
+        conn.text_factory = bytes
+        try:
+            cursor = conn.execute("SELECT id, name FROM user_table")
+            for row in cursor.fetchall():
+                user_id = row[0]
+                name = row[1]
+                if isinstance(name, bytes):
+                    try:
+                        name = name.decode('utf-8')
+                    except:
+                        name = str(user_id)
+                user_names[user_id] = name
+        except sqlite3.OperationalError:
+            continue
+        finally:
+            conn.close()
+
+    return user_names
+
+
+def get_image_cache_mapping(db_dir: str) -> dict[str, str]:
+    """Get mapping of media IDs to local file paths.
+
+    Args:
+        db_dir: WXWork data directory.
+
+    Returns:
+        Dict mapping media_key -> local_file_path.
+    """
+    mapping = {}
+
+    # Find CacheMapping database
+    cache_mapping_dir = os.path.join(db_dir, "..", "CacheMapping")
+    if not os.path.isdir(cache_mapping_dir):
+        cache_mapping_dir = os.path.join(os.path.dirname(db_dir), "CacheMapping")
+
+    if not os.path.isdir(cache_mapping_dir):
+        return mapping
+
+    for f in os.listdir(cache_mapping_dir):
+        if f.endswith(".db"):
+            db_path = os.path.join(cache_mapping_dir, f)
+            # CacheMapping is not encrypted
+            try:
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                conn.text_factory = bytes
+                cursor = conn.execute(
+                    "SELECT key, file_name FROM mapping WHERE type = 2"
+                )
+                for row in cursor.fetchall():
+                    key = row[0]
+                    file_name = row[1]
+                    if isinstance(key, bytes):
+                        try:
+                            key = key.decode('utf-8')
+                        except:
+                            continue
+                    if isinstance(file_name, bytes):
+                        try:
+                            file_name = file_name.decode('utf-8')
+                        except:
+                            continue
+                    mapping[key] = file_name
+                conn.close()
+            except sqlite3.OperationalError:
+                continue
+
+    return mapping
 
 
 def collect_chat_history(

@@ -542,11 +542,43 @@ $env:PYTHONIOENCODING = "utf-8"
 2. **密钥提取**: 集成 wechat-decrypt 项目的逻辑
 3. **消息解析**: protobuf 格式解析
 4. **会话表**: WXWork 使用 `conversation_table`（不是 `SessionTable`）
+5. **图片缓存**: 图片存储在 `Cache/Image/` 目录，未加密
+
+### 数据库结构
+
+| 数据库 | 表名 | 说明 |
+|--------|------|------|
+| session.db | conversation_table | 会话列表 |
+| message.db | message_table | 消息记录 |
+| user.db | user_table | 用户信息 |
+| file.db | file_table4 | 文件/图片元数据 |
+| CacheMapping/*.db | mapping | 图片缓存映射（未加密） |
+
+### 图片获取
+
+图片缓存在 `Cache/Image/` 目录，格式为标准 JPEG/PNG，未加密。
+
+通过 `CacheMapping` 数据库可以关联消息和图片：
+- `key` 字段 = `file.db` 中的 `server_id`
+- `file_name` 字段 = 本地缓存路径
+
+```python
+# 查询图片缓存
+conn = sqlite3.connect('CacheMapping/xxx.db')
+cursor = conn.execute('''
+    SELECT key, file_name, last_modify_time
+    FROM mapping
+    WHERE type = 2
+    ORDER BY last_modify_time DESC
+''')
+```
 
 ### 待完成功能
 
 - [ ] 集成密钥提取到 `init` 命令
 - [ ] 实现 `history` 命令的消息查询
+- [ ] 实现 `search` 命令的全文搜索
+- [ ] 实现图片路径关联到消息查询
 - [ ] 实现 `search` 命令的全文搜索
 - [ ] 实现 `contacts` 命令的联系人查询
 - [ ] 实现 `stats` 命令的统计分析
