@@ -7,6 +7,16 @@ import click
 from wxwork_cli.output.formatter import output, format_session_text
 
 
+def _decode_bytes(val):
+    """Decode bytes to string, handling binary data gracefully."""
+    if isinstance(val, bytes):
+        try:
+            return val.decode('utf-8')
+        except UnicodeDecodeError:
+            return val.hex()
+    return val
+
+
 @click.command("sessions")
 @click.option("--limit", default=20, help="Maximum sessions to show")
 @click.option("--format", "fmt", type=click.Choice(["json", "text"]), default="json",
@@ -29,18 +39,47 @@ def sessions(ctx, limit, fmt):
             continue
 
         conn = sqlite3.connect(f"file:{decrypted}?mode=ro", uri=True)
-        conn.row_factory = sqlite3.Row
+        conn.text_factory = bytes  # Handle binary data
         try:
             # Try common session table names
-            for table_name in ["SessionTable", "session", "sessions"]:
+            # WXWork uses "conversation_table" instead of "SessionTable"
+            for table_name in ["conversation_table", "SessionTable", "session", "sessions"]:
                 try:
                     cursor = conn.execute(f"SELECT * FROM [{table_name}] LIMIT 1")
                     cursor.fetchone()
-                    cursor = conn.execute(
-                        f"SELECT * FROM [{table_name}] ORDER BY last_timestamp DESC LIMIT ?",
-                        (limit,)
-                    )
-                    results = [dict(row) for row in cursor.fetchall()]
+
+                    # Get column names to handle different schemas
+                    cursor = conn.execute(f"PRAGMA table_info([{table_name}])")
+                    columns = {row[1] if isinstance(row[1], str) else row[1].decode() for row in cursor.fetchall()}
+
+                    # Determine order column
+                    order_col = None
+                    for col in ["last_timestamp", "timestamp", "update_time", "last_message_time"]:
+                        if col in columns:
+                            order_col = col
+                            break
+
+                    if order_col:
+                        cursor = conn.execute(
+                            f"SELECT * FROM [{table_name}] ORDER BY [{order_col}] DESC LIMIT ?",
+                            (limit,)
+                        )
+                    else:
+                        cursor = conn.execute(
+                            f"SELECT * FROM [{table_name}] LIMIT ?",
+                            (limit,)
+                        )
+
+                    # Get column names from cursor description
+                    col_names = [desc[0] if isinstance(desc[0], str) else desc[0].decode()
+                                 for desc in cursor.description]
+
+                    for row in cursor.fetchall():
+                        row_dict = {}
+                        for i, val in enumerate(row):
+                            col_name = col_names[i] if i < len(col_names) else f"col_{i}"
+                            row_dict[col_name] = _decode_bytes(val)
+                        results.append(row_dict)
                     break
                 except sqlite3.OperationalError:
                     continue

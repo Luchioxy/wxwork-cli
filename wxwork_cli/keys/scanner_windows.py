@@ -118,6 +118,8 @@ def _read_process_memory(pid: int) -> bytes:
                     regions.append(buf.raw[:bytes_read.value])
 
             # Move to next region
+            if mbi.BaseAddress is None or mbi.RegionSize is None:
+                break
             address = mbi.BaseAddress + mbi.RegionSize
             if address <= mbi.BaseAddress:
                 break  # Overflow protection
@@ -126,6 +128,53 @@ def _read_process_memory(pid: int) -> bytes:
 
     finally:
         kernel32.CloseHandle(handle)
+
+
+def _scan_cipher_struct(memory_data: bytes) -> list[bytes]:
+    """Scan for wxSQLite3 AES-128 cipher structure in memory.
+
+    The cipher struct layout (32-bit process):
+    - Offset 0x00: flags (non-zero)
+    - Offset 0x04: flags (non-zero)
+    - Offset 0x08: 16-byte key
+    - Offset 0x2C: AES context pointer
+    - Offset 0x30: page-size pointer chain
+
+    Args:
+        memory_data: Raw bytes from process memory.
+
+    Returns:
+        List of candidate 16-byte keys.
+    """
+    candidates = []
+
+    # Scan with 4-byte alignment (32-bit process)
+    for i in range(0, len(memory_data) - 48, 4):
+        try:
+            # Check flags at offset 0 and 4
+            flag1 = struct.unpack_from("<I", memory_data, i)[0]
+            flag2 = struct.unpack_from("<I", memory_data, i + 4)[0]
+
+            if flag1 == 0 or flag2 == 0:
+                continue
+
+            # Extract potential key at offset 0x08
+            key_candidate = memory_data[i + 8:i + 24]
+
+            # Check key has at least 6 unique bytes (not all zeros or repetitive)
+            if len(set(key_candidate)) < 6:
+                continue
+
+            # Check for valid page-size pointer chain
+            # This is complex, so we'll just check if the key looks valid
+            # and let the verification step confirm it
+
+            candidates.append(key_candidate)
+
+        except (struct.error, IndexError):
+            continue
+
+    return candidates
 
 
 def extract_keys(db_dir: str, force: bool = False) -> dict:
@@ -139,7 +188,7 @@ def extract_keys(db_dir: str, force: bool = False) -> dict:
         Dict with 'keys' (list of key entries) and 'matched_count'.
     """
     # Check for existing keys
-    keys_dir = os.path.join(os.path.expanduser("~"), ".wecom-cli")
+    keys_dir = os.path.join(os.path.expanduser("~"), ".wxwork-cli")
     keys_path = os.path.join(keys_dir, "all_keys.json")
 
     if not force and os.path.exists(keys_path):
@@ -167,8 +216,15 @@ def extract_keys(db_dir: str, force: bool = False) -> dict:
     for pid, mem_kb in pids:
         try:
             memory = _read_process_memory(pid)
-            candidates = extract_hex_candidates(memory)
-            all_candidates.extend(candidates)
+
+            # Strategy 1: Hex pattern matching
+            hex_candidates = extract_hex_candidates(memory)
+            all_candidates.extend(hex_candidates)
+
+            # Strategy 2: Cipher struct scanning (fallback)
+            struct_candidates = _scan_cipher_struct(memory)
+            all_candidates.extend(struct_candidates)
+
         except OSError:
             continue
 

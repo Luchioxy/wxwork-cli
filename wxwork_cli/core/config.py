@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 # Default paths
-STATE_DIR = os.path.join(os.path.expanduser("~"), ".wecom-cli")
+STATE_DIR = os.path.join(os.path.expanduser("~"), ".wxwork-cli")
 CONFIG_FILE = os.path.join(STATE_DIR, "config.json")
 KEYS_FILE = os.path.join(STATE_DIR, "all_keys.json")
 
@@ -72,16 +72,22 @@ def _has_db_files(directory: str, max_depth: int = 3) -> bool:
     return False
 
 
-def _choose_candidate(candidates: list[str]) -> str:
+def _choose_candidate(candidates: list[str], auto_select: bool = True) -> str:
     """Let the user choose from multiple candidate directories.
 
     Args:
         candidates: List of candidate directory paths.
+        auto_select: If True, auto-select the first candidate (for non-interactive mode).
 
     Returns:
         Selected directory path.
     """
     if len(candidates) == 1:
+        return candidates[0]
+
+    # In non-interactive mode, auto-select the first candidate
+    if auto_select:
+        print(f"\nAuto-selecting first directory: {candidates[0]}", file=sys.stderr)
         return candidates[0]
 
     print(f"\nFound {len(candidates)} WeCom data directories:", file=sys.stderr)
@@ -165,7 +171,7 @@ def load_config(config_path: str | None = None) -> dict:
     if not candidates:
         raise RuntimeError(
             "Could not auto-detect WeCom data directory. "
-            "Please run 'wecom-cli init --db-dir <path>' to specify it manually."
+            "Please run 'wxwork-cli init --db-dir <path>' to specify it manually."
         )
 
     db_dir = _choose_candidate(candidates)

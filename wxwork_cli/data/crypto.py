@@ -1,40 +1,98 @@
-"""SQLCipher 4 page-level decryption (AES-256-CBC).
+"""wxSQLite3 AES-128 decryption for WXWork databases.
 
-Direct port from wechat-cli. WXWork uses the same SQLCipher 4 scheme.
+Based on the wechat-decrypt project's implementation.
+WXWork uses wxSQLite3 AES-128-CBC encryption with per-page key derivation.
 """
 
 import hashlib
-import hmac
 import os
 import struct
 
-from Cryptodome.Cipher import AES
+from Crypto.Cipher import AES
 
-# SQLCipher 4 constants
+# wxSQLite3 constants
 PAGE_SZ = 4096
-KEY_SZ = 32
-SALT_SZ = 16
-RESERVE_SZ = 80  # 16 (IV) + 64 (HMAC-SHA512)
-HMAC_SZ = 64
-IV_SZ = 16
-
+KEY_SZ = 16  # AES-128 uses 16-byte keys
 SQLITE_HEADER = b"SQLite format 3\x00"
-HEADER_PLAIN_SZ = len(SQLITE_HEADER)  # 16 bytes plaintext at page start
+WXSQLITE3_SALT = b"sAlT"
 
 
-def _hmac_sha512(key: bytes, data: bytes) -> bytes:
-    return hmac.new(key, data, hashlib.sha512).digest()
+def _modmult(a, b, c, m, s):
+    """Modular multiplication for wxSQLite3 IV generation."""
+    q = s // a
+    s = b * (s - a * q) - c * q
+    if s < 0:
+        s += m
+    return s
 
 
-def _pbkdf2_hmac_sha512(password: bytes, salt: bytes, iterations: int, dklen: int) -> bytes:
-    return hashlib.pbkdf2_hmac("sha512", password, salt, iterations, dklen=dklen)
+def generate_initial_vector(page_no):
+    """Generate per-page IV using wxSQLite3's custom PRNG.
+
+    Matches SQLite3MultipleCiphers sqlite3mcGenerateInitialVector().
+    """
+    z = page_no + 1
+    initkey = bytearray(16)
+    for idx in range(4):
+        z = _modmult(52774, 40692, 3791, 2147483399, z)
+        initkey[idx * 4: idx * 4 + 4] = struct.pack("<I", z & 0xFFFFFFFF)
+    return hashlib.md5(initkey).digest()
+
+
+def derive_wxsqlite3_aes128_page_key(raw_key, page_no):
+    """Derive the per-page AES-128 key used by wxSQLite3 AES-128-CBC.
+
+    Formula: MD5(raw_key + struct.pack("<I", page_no) + b"sAlT")
+    """
+    if len(raw_key) != 16:
+        raise ValueError("wxSQLite3 AES-128 raw key must be 16 bytes")
+    material = raw_key + struct.pack("<I", page_no) + WXSQLITE3_SALT
+    return hashlib.md5(material).digest()
+
+
+def has_wxsqlite3_plain_header_fragment(page):
+    """Check if page has wxSQLite3 plain header fragment at bytes 16-23.
+
+    New wxSQLite3 AES mode keeps SQLite header bytes 16..23 in plaintext.
+    """
+    if len(page) < 24:
+        return False
+    header = page[16:24]
+    page_size = (header[0] << 8) | header[1]
+    if page_size == 1:
+        page_size = 65536
+    return (
+        page_size >= 512
+        and page_size <= 65536
+        and (page_size & (page_size - 1)) == 0
+        and header[5] == 0x40
+        and header[6] == 0x20
+        and header[7] == 0x20
+    )
+
+
+def is_wxsqlite3_aes128_page1(page):
+    """Check if page 1 is wxSQLite3 AES-128 encrypted."""
+    return not is_plain_sqlite_page(page) and has_wxsqlite3_plain_header_fragment(page)
+
+
+def is_plain_sqlite_page(page):
+    """Check if page is a plain SQLite page (not encrypted)."""
+    return page[:len(SQLITE_HEADER)] == SQLITE_HEADER
+
+
+def _decrypt_aes128_cbc(raw_key, page_no, data):
+    """Decrypt data using AES-128-CBC with per-page key and IV."""
+    page_key = derive_wxsqlite3_aes128_page_key(raw_key, page_no)
+    iv = generate_initial_vector(page_no)
+    return AES.new(page_key, AES.MODE_CBC, iv).decrypt(data)
 
 
 def decrypt_page(enc_key: bytes, page_data: bytes, pgno: int) -> bytes:
-    """Decrypt a single 4096-byte SQLCipher 4 page.
+    """Decrypt a single 4096-byte wxSQLite3 AES-128 page.
 
     Args:
-        enc_key: 32-byte encryption key.
+        enc_key: 16-byte raw encryption key.
         page_data: Raw encrypted page (4096 bytes).
         pgno: Page number (1-based).
 
@@ -44,91 +102,52 @@ def decrypt_page(enc_key: bytes, page_data: bytes, pgno: int) -> bytes:
     if len(page_data) != PAGE_SZ:
         raise ValueError(f"Expected {PAGE_SZ} bytes, got {len(page_data)}")
 
-    # Extract salt from page 1 (first 16 bytes), or use page-specific derivation
-    if pgno == 1:
-        salt = page_data[:SALT_SZ]
-    else:
-        # For pages > 1, salt is derived from page number
-        salt = struct.pack(">I", pgno).rjust(SALT_SZ, b"\x00")
+    data = bytearray(page_data)
 
-    # Derive per-page key using PBKDF2
-    mac_salt = bytes(b ^ 0x3A for b in salt)
-    mac_key = _pbkdf2_hmac_sha512(enc_key, mac_salt, 2, dklen=KEY_SZ)
+    # Page 1 special handling
+    if pgno == 1 and has_wxsqlite3_plain_header_fragment(data):
+        db_header_fragment = bytes(data[16:24])
+        data[16:24] = data[8:16]
+        decrypted_tail = _decrypt_aes128_cbc(enc_key, pgno, bytes(data[16:]))
+        data[16:] = decrypted_tail
+        if bytes(data[16:24]) != db_header_fragment:
+            raise ValueError("wxSQLite3 AES-128 key validation failed")
+        data[:16] = SQLITE_HEADER
+        return bytes(data)
 
-    # Extract IV and HMAC from reserve area
-    reserve = page_data[-RESERVE_SZ:]
-    iv = reserve[:IV_SZ]
-    stored_hmac = reserve[IV_SZ:IV_SZ + HMAC_SZ]
-
-    # Verify HMAC
-    # HMAC covers: page data (excluding reserve) + page number (big-endian 4 bytes)
-    hmac_data = page_data[:-RESERVE_SZ] + struct.pack(">I", pgno)
-    computed_hmac = _hmac_sha512(mac_key, hmac_data)
-
-    if not hmac.compare_digest(computed_hmac, stored_hmac):
-        # Try with salt directly (some SQLCipher versions)
-        mac_key_alt = _pbkdf2_hmac_sha512(enc_key, salt, 2, dklen=KEY_SZ)
-        computed_hmac_alt = _hmac_sha512(mac_key_alt, hmac_data)
-        if not hmac.compare_digest(computed_hmac_alt, stored_hmac):
-            raise ValueError(f"HMAC verification failed for page {pgno}")
-
-    # Decrypt page content (excluding reserve area and plaintext header for page 1)
-    cipher = AES.new(enc_key, AES.MODE_CBC, iv)
-
-    if pgno == 1:
-        # Page 1: first 16 bytes are plaintext SQLite header
-        encrypted_part = page_data[HEADER_PLAIN_SZ:-RESERVE_SZ]
-        decrypted_part = cipher.decrypt(encrypted_part)
-        return SQLITE_HEADER + decrypted_part
-    else:
-        encrypted_part = page_data[:-RESERVE_SZ]
-        return cipher.decrypt(encrypted_part)
+    # Other pages: decrypt entire page
+    return _decrypt_aes128_cbc(enc_key, pgno, bytes(data))
 
 
 def decrypt_wal_page(enc_key: bytes, page_data: bytes, pgno: int) -> bytes:
     """Decrypt a WAL (Write-Ahead Log) page.
 
-    WAL pages have the same encryption as regular pages.
+    WAL pages use the same encryption as regular pages.
     """
     return decrypt_page(enc_key, page_data, pgno)
 
 
 def full_decrypt(db_path: str, out_path: str, enc_key: bytes) -> None:
-    """Decrypt an entire SQLCipher database file.
+    """Decrypt an entire wxSQLite3 database file.
 
     Args:
         db_path: Path to the encrypted .db file.
         out_path: Path for the decrypted output file.
-        enc_key: 32-byte encryption key.
+        enc_key: 16-byte raw encryption key.
     """
-    with open(db_path, "rb") as f:
-        data = f.read()
+    size = os.path.getsize(db_path)
+    total_pages = (size + PAGE_SZ - 1) // PAGE_SZ
 
-    if len(data) < PAGE_SZ:
-        raise ValueError(f"Database file too small: {len(data)} bytes")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    num_pages = len(data) // PAGE_SZ
-    remainder = len(data) % PAGE_SZ
-
-    decrypted_pages = []
-    for i in range(num_pages):
-        page_data = data[i * PAGE_SZ:(i + 1) * PAGE_SZ]
-        pgno = i + 1
-        try:
-            decrypted_page = decrypt_page(enc_key, page_data, pgno)
-            decrypted_pages.append(decrypted_page)
-        except ValueError as e:
-            raise ValueError(f"Failed to decrypt page {pgno}: {e}") from e
-
-    # Write decrypted database
-    with open(out_path, "wb") as f:
-        for page in decrypted_pages:
-            f.write(page)
-        # Warn if there's a remainder (shouldn't happen for valid SQLCipher DBs)
-        if remainder:
-            import sys
-            print(f"Warning: Database has {remainder} trailing bytes (not page-aligned)", file=sys.stderr)
-            f.write(data[-remainder:])
+    with open(db_path, "rb") as fin, open(out_path, "wb") as fout:
+        for page_no in range(1, total_pages + 1):
+            page = fin.read(PAGE_SZ)
+            if not page:
+                break
+            if len(page) < PAGE_SZ:
+                page += b"\x00" * (PAGE_SZ - len(page))
+            fout.write(decrypt_page(enc_key, page, page_no))
 
 
 def decrypt_wal(wal_path: str, out_path: str, enc_key: bytes) -> None:
@@ -137,21 +156,18 @@ def decrypt_wal(wal_path: str, out_path: str, enc_key: bytes) -> None:
     Args:
         wal_path: Path to the encrypted WAL file.
         out_path: Path for the decrypted output WAL.
-        enc_key: 32-byte encryption key.
+        enc_key: 16-byte raw encryption key.
     """
     with open(wal_path, "rb") as f:
         data = f.read()
 
     if len(data) == 0:
-        # Empty WAL, nothing to decrypt
         with open(out_path, "wb") as f:
             pass
         return
 
     # WAL format: 32-byte header + page frames
-    # Each frame: page data (PAGE_SZ) + frame checksum (8 bytes)
     WAL_HEADER_SZ = 32
-    FRAME_CHECKSUM_SZ = 8
 
     if len(data) < WAL_HEADER_SZ:
         raise ValueError(f"WAL file too small: {len(data)} bytes")
@@ -159,45 +175,18 @@ def decrypt_wal(wal_path: str, out_path: str, enc_key: bytes) -> None:
     wal_header = data[:WAL_HEADER_SZ]
     frame_data = data[WAL_HEADER_SZ:]
 
-    # Calculate frame size (page + checksum)
-    frame_sz = PAGE_SZ + FRAME_CHECKSUM_SZ
-
-    if len(frame_data) % frame_sz != 0:
-        # WAL might have different format, try treating all data after header as pages
-        # This is a fallback for WXWork's potentially different WAL format
-        num_pages = len(frame_data) // PAGE_SZ
-        decrypted_frames = []
-        for i in range(num_pages):
-            page_data = frame_data[i * PAGE_SZ:(i + 1) * PAGE_SZ]
-            pgno = i + 1
-            try:
-                decrypted_page = decrypt_wal_page(enc_key, page_data, pgno)
-                decrypted_frames.append(decrypted_page)
-            except ValueError:
-                # Skip frames that fail to decrypt (may be uncommitted)
-                decrypted_frames.append(page_data)
-
-        with open(out_path, "wb") as f:
-            f.write(wal_header)
-            for frame in decrypted_frames:
-                f.write(frame)
-        return
-
-    num_frames = len(frame_data) // frame_sz
+    # Treat all data after header as pages
+    num_pages = len(frame_data) // PAGE_SZ
     decrypted_frames = []
-
-    for i in range(num_frames):
-        offset = i * frame_sz
-        page_data = frame_data[offset:offset + PAGE_SZ]
-        checksum = frame_data[offset + PAGE_SZ:offset + frame_sz]
+    for i in range(num_pages):
+        page_data = frame_data[i * PAGE_SZ:(i + 1) * PAGE_SZ]
         pgno = i + 1
-
         try:
             decrypted_page = decrypt_wal_page(enc_key, page_data, pgno)
-            decrypted_frames.append(decrypted_page + checksum)
+            decrypted_frames.append(decrypted_page)
         except ValueError:
-            # Keep original frame if decryption fails
-            decrypted_frames.append(page_data + checksum)
+            # Skip frames that fail to decrypt (may be uncommitted)
+            decrypted_frames.append(page_data)
 
     with open(out_path, "wb") as f:
         f.write(wal_header)
@@ -205,13 +194,26 @@ def decrypt_wal(wal_path: str, out_path: str, enc_key: bytes) -> None:
             f.write(frame)
 
 
+def looks_like_sqlite_page1(page):
+    """Check if decrypted page looks like a valid SQLite page 1."""
+    if page[:len(SQLITE_HEADER)] != SQLITE_HEADER:
+        return False
+    if len(page) < 108:
+        return False
+    btree_page_type = page[100]
+    return btree_page_type in (0x02, 0x05, 0x0A, 0x0D)
+
+
 def verify_key(enc_key: bytes, db_path: str) -> bool:
     """Verify that an encryption key can decrypt a database.
 
-    Reads the first page and checks for the SQLite header after decryption.
+    For wxSQLite3 AES-128, we verify by:
+    1. Decrypting page 1
+    2. Checking for SQLite header
+    3. Checking for valid B-tree page type at offset 100
 
     Args:
-        enc_key: 32-byte encryption key to verify.
+        enc_key: 16-byte raw encryption key to verify.
         db_path: Path to an encrypted database file.
 
     Returns:
@@ -225,6 +227,6 @@ def verify_key(enc_key: bytes, db_path: str) -> bool:
             return False
 
         decrypted = decrypt_page(enc_key, page1, 1)
-        return decrypted[:HEADER_PLAIN_SZ] == SQLITE_HEADER
+        return looks_like_sqlite_page1(decrypted)
     except (ValueError, OSError):
         return False

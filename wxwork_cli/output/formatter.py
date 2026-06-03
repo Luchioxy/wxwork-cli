@@ -26,6 +26,10 @@ def output_text(text: str) -> None:
     Args:
         text: Text to output.
     """
+    # Ensure proper encoding for Windows terminal
+    if sys.platform == "win32":
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stdout.write(text)
     if not text.endswith("\n"):
         sys.stdout.write("\n")
@@ -110,10 +114,30 @@ def format_session_text(session: dict) -> str:
     Returns:
         Formatted text string.
     """
-    name = session.get("name", session.get("username", "unknown"))
+    # Handle WXWork conversation_table format
+    name = session.get("name", session.get("username", ""))
+    if not name:
+        # Try to get name from roomname_remark or id
+        name = session.get("roomname_remark", "") or session.get("id", "unknown")
+
+    # Decode bytes if needed
+    if isinstance(name, bytes):
+        try:
+            name = name.decode('utf-8')
+        except UnicodeDecodeError:
+            name = name.hex()
+
     unread = session.get("unread_count", 0)
     last_msg = session.get("last_message", "")
-    last_time = session.get("last_time", "")
+    last_time = session.get("last_time", session.get("last_message_time", ""))
+
+    # Format timestamp if it's a Unix timestamp
+    if isinstance(last_time, int) and last_time > 0:
+        from datetime import datetime
+        try:
+            last_time = datetime.fromtimestamp(last_time).strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, OSError):
+            last_time = str(last_time)
 
     parts = [f"  {name}"]
     if unread:

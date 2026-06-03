@@ -1,6 +1,7 @@
 """Cross-platform key extraction utilities.
 
-Shared HMAC verification, database collection, and hex pattern scanning.
+Shared key verification, database collection, and hex pattern scanning.
+Supports both SQLCipher (personal WeChat) and wxSQLite3 (WXWork) key formats.
 """
 
 import hashlib
@@ -10,13 +11,15 @@ from pathlib import Path
 
 from wxwork_cli.data.crypto import KEY_SZ, SALT_SZ, PAGE_SZ, verify_key
 
-# Hex pattern for SQLCipher keys in process memory
-# Format: 96 hex chars = 32-byte key + 16-byte salt (SQLCipher 4)
-KEY_HEX_PATTERN = re.compile(rb"x'([0-9a-fA-F]{64,192})")
+# Hex pattern for wxSQLite3 keys in process memory
+# WXWork uses AES-128, so keys are 16 bytes (32 hex chars)
+# Format: x'<32_hex_chars_key><32_hex_chars_salt>' (total 64 hex chars)
+# Or just x'<32_hex_chars>' (key only)
+KEY_HEX_PATTERN = re.compile(rb"x'([0-9a-fA-F]{32,192})")
 
-# Alternative patterns
-KEY_ONLY_PATTERN = re.compile(rb"x'([0-9a-fA-F]{64})")  # 32-byte key only
-SALT_ONLY_PATTERN = re.compile(rb"x'([0-9a-fA-F]{32})")  # 16-byte salt only
+# Alternative patterns for different key formats
+KEY_ONLY_PATTERN = re.compile(rb"x'([0-9a-fA-F]{32})")  # 16-byte key only (WXWork)
+KEY_64_PATTERN = re.compile(rb"x'([0-9a-fA-F]{64})")  # 32-byte key (WeChat) or key+salt (WXWork)
 
 
 def collect_db_files(db_dir: str) -> list[str]:
@@ -62,36 +65,46 @@ def extract_hex_candidates(memory_data: bytes) -> list[bytes]:
     """Extract potential key candidates from process memory data.
 
     Searches for hex-encoded key patterns in various formats.
+    For WXWork (wxSQLite3 AES-128), keys are 16 bytes.
 
     Args:
         memory_data: Raw bytes from process memory.
 
     Returns:
-        List of candidate key bytes (32 bytes each).
+        List of candidate key bytes (16 bytes each for WXWork).
     """
     candidates = []
 
-    # Pattern 1: Full key+salt (96 hex chars = 48 bytes)
-    for match in KEY_HEX_PATTERN.finditer(memory_data):
-        hex_str = match.group(1)
-        try:
-            raw = bytes.fromhex(hex_str.decode("ascii"))
-            # Could be key(32) + salt(16) = 48 bytes
-            if len(raw) >= 48:
-                candidates.append(raw[:32])  # Just the key part
-            # Could be key(32) only
-            elif len(raw) == 32:
-                candidates.append(raw)
-        except (ValueError, UnicodeDecodeError):
-            continue
-
-    # Pattern 2: 64 hex chars (key only)
+    # Pattern 1: 32 hex chars (16-byte key) - WXWork AES-128
     for match in KEY_ONLY_PATTERN.finditer(memory_data):
         hex_str = match.group(1)
         try:
             raw = bytes.fromhex(hex_str.decode("ascii"))
-            if len(raw) == 32:
+            if len(raw) == 16:
                 candidates.append(raw)
+        except (ValueError, UnicodeDecodeError):
+            continue
+
+    # Pattern 2: 64 hex chars - could be key+salt or 32-byte key
+    for match in KEY_64_PATTERN.finditer(memory_data):
+        hex_str = match.group(1)
+        try:
+            raw = bytes.fromhex(hex_str.decode("ascii"))
+            if len(raw) == 32:
+                # Could be 32-byte key (WeChat) or key+salt (WXWork)
+                # Try both: first 16 bytes as key, then all 32 bytes
+                candidates.append(raw[:16])  # First 16 bytes as WXWork key
+                candidates.append(raw)  # All 32 bytes as WeChat key
+        except (ValueError, UnicodeDecodeError):
+            continue
+
+    # Pattern 3: Longer hex strings - extract first 16 bytes
+    for match in KEY_HEX_PATTERN.finditer(memory_data):
+        hex_str = match.group(1)
+        try:
+            raw = bytes.fromhex(hex_str.decode("ascii"))
+            if len(raw) >= 16:
+                candidates.append(raw[:16])  # First 16 bytes as key
         except (ValueError, UnicodeDecodeError):
             continue
 
@@ -105,7 +118,7 @@ def verify_and_match_keys(
     """Verify key candidates against database pages.
 
     Args:
-        candidates: List of 32-byte key candidates.
+        candidates: List of key candidates (16 or 32 bytes each).
         db_pages: List of (db_path, first_page_data) tuples.
 
     Returns:
